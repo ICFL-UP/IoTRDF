@@ -1,0 +1,72 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  padding: 20px;
+  text-align: center;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+
+.process-flow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.flow-step {
+  padding: 10px 20px;
+  margin: 5px;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+.actions {
+  margin: 20px 0;
+}
+
+.uploader {
+  display: inline-block;
+  margin-right: 10px;
+}
+
+.file-input {
+  margin-bottom: 10px;
+}
+
+.upload-btn,
+.submit-btn {
+  padding: 10px 20px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.upload-btn:hover,
+.submit-btn:hover {
+  background-color: #0056b3;
+}
+
+.logs,
+.visualization {
+  border: 1px solid #ccc;
+  margin-top: 20px;
+  padding: 10px;
+  border-radius: 5px;
+}
+
+.logs h2,
+.visualization h2 {
+  margin-bottom: 10px;
+}
