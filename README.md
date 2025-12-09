@@ -1,2 +1,2 @@
 # IoTRDF
-IoT Ransomware Detection Framework (IRDF) 
+IoT Ransomware Detection Framework
