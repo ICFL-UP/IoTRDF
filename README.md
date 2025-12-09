@@ -29,4 +29,4 @@ The IoT Ransomware Detection Framework (IRDF) is a reinforcement learning–base
 IRDF runs primarily on a Windows 11 host system. The backend, frontend, and database run on Windows; the optional Docker-based testbed runs in a Linux virtual machine.
 ### 1. Clone the repository
 git clone https://github.com/ICFL-UP/IoTRDF.git
-cd IoTRDF
+
