@@ -1,0 +1,14 @@
+{
+  "exported_at": "20251121-142643",
+  "model_type": "policy_selected_features",
+  "classifier": "DT",
+  "feature_indices": [
+    82
+  ],
+  "use_scaler": false,
+  "train_plus_val_samples": 18801,
+  "n_features_total": 90,
+  "train_time_sec": 0.0078,
+  "test_infer_time_sec": 0.001,
+  "expected_input_dim": 1
+}

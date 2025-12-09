@@ -1,0 +1,14 @@
+{
+  "timestamp": "2025-11-12T14:26:27.114850",
+  "total_requests": 300,
+  "successful_requests": 0,
+  "success_rate": 0.0,
+  "latency_ms": {
+    "p50": 0,
+    "p95": 0,
+    "p99": 0,
+    "avg": 0.0,
+    "min": 0,
+    "max": 0
+  }
+}
