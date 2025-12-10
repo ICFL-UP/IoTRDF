@@ -1,3 +1,9 @@
+"""
+Orchestrates SAC-based feature-selection training.
+
+The PolicyLearner coordinates the FeatureAwareSAC agent, reward function,
+classifier evaluation, replay buffer, and SSE logging for per-epoch diagnostics.
+"""
 import pandas as pd
 import numpy as np
 import torch
@@ -9,27 +15,21 @@ import random
 import os
 import uuid
 
-# --- ASSUMED IMPORTS ---
 from .sac_agent import FeatureAwareSAC, Operation
-# The EnvironmentModel import is no longer strictly needed by this file
-from .classifier_evaluator import ClassifierEvaluator
 from .reward_function import RewardFunction
 from .sac_reply_buffer import PrioritizedReplayBuffer
 from .classifier_evaluator import ClassifierEvaluator, ClassifierSpec
 
 logger = logging.getLogger(__name__)
 
-
 class PolicyLearner:
-    """
-    The main class that orchestrates the feature selection process.
-    """
+   
     def __init__(self, max_features: int, config: Dict = None, save_path: str = None):
         self.save_path = save_path
         self.max_features = max_features
         
         self.config = {
-            # === Environment & Buffer Settings ===
+    
             'warmup_steps': 64,
             'sac_batch_size': 32,
             'sac_buffer_size': 10000,
@@ -59,7 +59,6 @@ class PolicyLearner:
         
         self.config.update(config if config is not None else {})
 
-        # --- NEW LOGGING: Log the final, effective hyperparameters being used ---
         logger.info("-" * 60)
         logger.info(" PolicyLearner initialized with the following configuration:")
         for key, value in self.config.items():
@@ -124,9 +123,7 @@ class PolicyLearner:
         )
 
     def _get_sac_state(self, classifier_metrics: Dict[str, float], current_features: Set[int]) -> torch.Tensor:
-        """
-        Constructs a radically simplified and normalized state vector for the agent.
-        """
+        
         accuracy = classifier_metrics.get('accuracy', 0.0)
         f1_score = classifier_metrics.get('f1', 0.0)
         num_features_normalized = len(current_features) / self.max_features if self.max_features > 0 else 0.0
@@ -137,11 +134,8 @@ class PolicyLearner:
 
         return performance_state.to(self.device)
 
-
     def _get_guided_action(self) -> Optional[Tuple[int, int]]:
-        """
-        Implements the "Best-So-Far" (BSF) Guider logic.
-        """
+       
         missing_good_features = self.best_features_so_far - self.agent.current_features
         extra_bad_features = self.agent.current_features - self.best_features_so_far
 
@@ -158,13 +152,11 @@ class PolicyLearner:
         return None
     
     def get_diagnostics(self, state_tensor_unsqueezed: torch.Tensor, operation_action_value: int) -> Dict[str, Any]:
-        """Gathers all diagnostic information for the new HierarchicalActor."""
+    
         with torch.no_grad():
-            # --- CORRECTED CALL: The new HierarchicalActor only needs the state ---
+        
             op_dist, shared_embedding = self.agent.actor(state_tensor_unsqueezed)
             
-            # This logic remains correct, as it calculates the expected feature
-            # entropy based on the hierarchical structure.
             expected_feat_entropy = 0
             op_probs = op_dist.probs
             for op_val in range(self.agent.num_operations):
@@ -175,7 +167,6 @@ class PolicyLearner:
             entropy_op = op_dist.entropy().item()
             entropy_feat = expected_feat_entropy.item()
             
-            # --- This diagnostic logic remains correct ---
             max_q_potentials = {}
             for op in Operation:
                 top_features = self.agent.get_topk_features_for_operation(
@@ -209,10 +200,7 @@ class PolicyLearner:
             }
         
     def run_training_step(self, real_data_tuple, val_data, epoch: int):
-        """
-        Executes one full epoch of feature selection, showing the off-policy learning cycle.
-        Streams structured updates for the UI via SSE.
-        """
+       
         X_train_np, y_train_np = real_data_tuple
 
         if len(np.unique(y_train_np)) < 2:
@@ -223,7 +211,6 @@ class PolicyLearner:
 
         self.steps_done += 1
 
-        # === MANUAL ALPHA DECAY LOGIC (only after warmup) ===
         if self.config.get('manual_alpha_control', False) and self.steps_done > self.config['warmup_steps']:
             prev_alpha = self.current_alpha_value
             self.current_alpha_value = max(
@@ -235,26 +222,22 @@ class PolicyLearner:
             if self.current_alpha_value != prev_alpha:
                 logger.info(f"[Manual Alpha Decay] α: {prev_alpha:.4f} → {self.current_alpha_value:.4f}")
 
-        # --- Define state early; keep handy for diagnostics and action selection ---
         state_tensor_unsqueezed = self.current_sac_state_tensor.unsqueeze(0)
         current_f1 = self._get_sac_state_metrics(self.current_sac_state_tensor)['f1']
 
-        # --- Track current feature count and copy for experience ---
         current_num_features = len(self.agent.current_features)
         features_for_experience = self.agent.current_features.copy()
 
         previous_metrics = {
             'f1': current_f1,
             'num_features': current_num_features,
-            'features': features_for_experience  # <-- always attach features for the buffer
+            'features': features_for_experience  
         }
         state_for_experience = self.current_sac_state_tensor.cpu().numpy()
 
-        # === ACTION SELECTION ===
         if self.steps_done <= self.config['warmup_steps']:
             action_source = "Random Warmup"
 
-            # Robust valid-operation selection
             current_num_features = len(self.agent.current_features)
             valid_ops = list(Operation)  # [ADD, REMOVE, NO_OP]
             if current_num_features <= 1 and Operation.REMOVE in valid_ops:
@@ -280,11 +263,9 @@ class PolicyLearner:
             feature_idx_action = random.choice(possible_features)
 
         else:
-            # Entering learning for the first time → reset BSF anchors
+         
             if self.steps_done == self.config['warmup_steps'] + 1:
-                logger.info("=" * 60)
-                logger.info(" WARMUP COMPLETE. Entering Learning Phase. Resetting BSF.")
-                logger.info("=" * 60)
+    
                 self.best_f1_so_far = current_f1
                 self.best_features_so_far = self.agent.current_features.copy()
 
@@ -318,7 +299,6 @@ class PolicyLearner:
 
         operation_enum = Operation(operation_action_value)
 
-        # --- PRE-ACTION DIAGNOSTICS (for the UI) ---
         with torch.no_grad():
             diagnostics = self.get_diagnostics(state_tensor_unsqueezed, operation_action_value)
             yield self._make_json_serializable({
@@ -331,7 +311,6 @@ class PolicyLearner:
                 **diagnostics
             })
 
-        # === ENV INTERACTION ===
         self.agent.apply_action(feature_idx_action, operation_action_value)
         new_feature_set = sorted(list(self.agent.current_features))
 
@@ -348,7 +327,6 @@ class PolicyLearner:
             'action_taken': {'feature': feature_idx_action, 'operation': operation_enum.name}
         })
 
-        # Train classifier on the new mask
         binary_mask = np.zeros(self.classifier.state_dim, dtype=np.int32)
         if new_feature_set:
             binary_mask[new_feature_set] = 1
@@ -358,7 +336,6 @@ class PolicyLearner:
         val_metrics['features'] = new_feature_set  # always available for the buffer
         new_f1 = val_metrics.get('f1', 0.0)
 
-        # Track Best-So-Far (post-warmup)
         if self.steps_done > self.config['warmup_steps']:
             is_new_bsf = (
                 new_f1 > self.best_f1_so_far or
@@ -390,7 +367,6 @@ class PolicyLearner:
             'selected_features': new_feature_set
         })
 
-        # === REWARD & EXPERIENCE ===
         unclipped_reward, reward_components = self.reward_fn.calculate(
             previous_metrics=previous_metrics,
             new_metrics=val_metrics,
@@ -416,7 +392,6 @@ class PolicyLearner:
         self.sac_replay_buffer.add(experience)
         self.current_sac_state_tensor = next_sac_state  # advance to next state
 
-        # === LEARN FROM REPLAY BUFFER ===
         if self.steps_done > self.config['warmup_steps'] and len(self.sac_replay_buffer) >= self.config['sac_batch_size']:
             logger.info(
                 f"[Learning] Sampling batch of {self.config['sac_batch_size']} experiences "
@@ -428,7 +403,6 @@ class PolicyLearner:
                 batch = self._process_sac_batch_for_update(transitions)
                 is_weights_tensor = torch.tensor(is_weights, dtype=torch.float32, device=self.device).unsqueeze(1)
 
-                # Debug a few sampled experiences
                 log_n = 10
                 logger.info("------ [ReplayBuffer] Sampled Experiences for Update ------")
                 for i in range(min(log_n, len(transitions))):
@@ -445,15 +419,11 @@ class PolicyLearner:
                 new_priorities, returned_losses = self.agent.update(batch=batch, is_weights=is_weights_tensor)
                 self.sac_replay_buffer.update_priorities(indices, new_priorities.cpu().numpy())
 
-                # --- Ensure UI gets *consistent* metrics and non-zero targets ---
-                # Normalize/augment keys expected by the frontend.
                 returned_losses = dict(returned_losses)  # make it mutable/plain
 
-                # 1) Guarantee alpha values are present
                 returned_losses.setdefault("alpha_op",   float(self.agent.alpha_op.item()))
                 returned_losses.setdefault("alpha_feat", float(self.agent.alpha_feat.item()))
 
-                # 2) Compute current entropies from the actor on the *latest* state
                 with torch.no_grad():
                     st = self.current_sac_state_tensor.unsqueeze(0)
                     op_dist, shared_emb = self.agent.actor(st)
@@ -470,8 +440,6 @@ class PolicyLearner:
                 returned_losses.setdefault("op_entropy",   float(op_entropy))
                 returned_losses.setdefault("feat_entropy", float(feat_entropy))
 
-                # 3) Attach target entropies (these were showing as 0.000 in the UI)
-                #    Pull directly from the agent so they are always populated.
                 returned_losses.setdefault("target_entropy_op",   float(getattr(self.agent, "target_entropy_op", 0.0)))
                 returned_losses.setdefault("target_entropy_feat", float(getattr(self.agent, "target_entropy_feat", 0.0)))
 
@@ -480,16 +448,12 @@ class PolicyLearner:
                     'epoch': epoch,
                     'reward_total': sac_reward,
                     'reward_components': reward_components,
-                    'losses': returned_losses,              # <-- now guaranteed to have targets & entropies
+                    'losses': returned_losses,             
                     'selected_features': new_feature_set
                 })
 
     def _process_sac_batch_for_update(self, transitions: List[Dict]) -> Dict[str, Any]:
-        """
-        Takes a list of dictionary-based experiences and converts them into a
-        dictionary of batched PyTorch tensors, now including feature sets.
-        """
-        # --- KEY CHANGE: Unpack a list of dictionaries ---
+  
         states = np.array([t['state'] for t in transitions], dtype=np.float32)
         features = [t['features'] for t in transitions] # This will be a list of sets
         actions = [t['action'] for t in transitions]
@@ -497,7 +461,6 @@ class PolicyLearner:
         next_states = np.array([t['next_state'] for t in transitions], dtype=np.float32)
         next_features = [t['next_features'] for t in transitions] # This will be a list of sets
         dones = np.array([t['done'] for t in transitions], dtype=np.bool_).reshape(-1, 1)
-        # --- END OF CHANGE ---
 
         feature_indices_np = np.array([a[0] for a in actions], dtype=np.int64)
         op_indices_np = np.array([a[1] for a in actions], dtype=np.int64)
@@ -514,15 +477,12 @@ class PolicyLearner:
         }
 
     def _get_sac_state_metrics(self, state_tensor: torch.Tensor) -> Dict[str, float]:
-        """A helper function to extract the F1 score from a state tensor."""
+
         state_np = state_tensor.cpu().numpy()
         return {'f1': state_np[1]}
 
     def _make_json_serializable(self, data: Any) -> Any:
-        """
-        A recursive utility function to convert a data structure containing
-        NumPy types into a JSON-serializable format.
-        """
+        
         if isinstance(data, dict):
             return {k: self._make_json_serializable(v) for k, v in data.items()}
         if isinstance(data, (list, tuple, set)):
@@ -535,4 +495,5 @@ class PolicyLearner:
             return float(data)
         if isinstance(data, np.bool_):
             return bool(data)
+
         return data
